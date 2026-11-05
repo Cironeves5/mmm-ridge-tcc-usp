@@ -6,13 +6,21 @@
 
 # 1. Problema de Negócio
 
-Empresas distribuem o orçamento de marketing entre vários canais, offline (TV, rádio, jornal, mala direta) e digitais (Google Ads, display, vídeo, redes sociais), mas medir o retorno de cada um é difícil por três razões estruturais.
+Saber quanto cada canal de mídia contribui para as vendas sempre foi uma pergunta central do marketing, e ela ficou mais difícil de responder nos últimos anos. Navegadores como Safari e Firefox passaram a bloquear cookies de terceiros por padrão, a App Tracking Transparency da Apple, em vigor desde o iOS 14.5 (2021), passou a exigir a autorização do usuário para o rastreamento entre aplicativos, e leis de proteção de dados como a LGPD e o GDPR restringiram o uso de informações pessoais. Com isso, as plataformas perderam boa parte da capacidade de identificar de onde vem cada acesso e cada compra.
 
-- **Carryover (adstock).** O efeito de um anúncio continua nas semanas seguintes à veiculação, por memória de marca.
-- **Saturação.** O retorno de cada canal é decrescente, porque a audiência de conversão mais fácil se esgota primeiro.
-- **Multicolinearidade.** Os canais costumam ser acionados juntos, em campanhas integradas, o que dificulta isolar o efeito de cada um.
+Mesmo quando o rastreamento funciona, os modelos de atribuição mais usados, como o de último clique, representam mal o comportamento do consumidor. Uma pessoa pode ver um anúncio no display, encontrar a marca no jornal dias depois e só então buscar o produto no Google e comprar. Na atribuição por último clique, a busca paga leva todo o crédito pela venda, e os canais que despertaram o interesse ficam invisíveis, sobretudo os offline, que nunca geram um clique.
 
-O Marketing Mix Modeling é a técnica econométrica clássica para esse problema. Trata-se de uma regressão sobre séries temporais agregadas que decompõe as vendas entre uma linha de base, a contribuição de cada canal de mídia e os fatores de contexto. Como não depende de dados individuais de usuário, o MMM ganhou relevância com as restrições de privacidade e com as limitações da atribuição digital, em que o último canal antes da compra costuma levar todo o crédito.
+Sem uma rastreabilidade confiável, as empresas perdem a base para dizer qual canal gera retorno e como distribuir o orçamento. É nesse contexto que o Marketing Mix Modeling volta a ganhar espaço. Por ser uma regressão sobre séries temporais agregadas (vendas e investimento por semana, por exemplo), o MMM estima a contribuição de cada canal sem depender de dados individuais de usuário nem dos relatórios das próprias plataformas, e ainda coloca a mídia online e a offline na mesma base de comparação.
+
+## Os desafios de estimação
+
+Para cumprir esse papel, o modelo precisa lidar com três características da resposta à mídia.
+
+- **Carryover (adstock).** O efeito de um anúncio continua nas semanas seguintes à veiculação, por memória de marca, e o modelo precisa estimar quanto desse efeito permanece a cada semana.
+- **Saturação.** O retorno de cada canal é decrescente, porque a audiência de conversão mais fácil se esgota primeiro, e o modelo precisa identificar a partir de que nível o investimento adicional passa a render pouco.
+- **Multicolinearidade.** Quando os canais são acionados juntos, em campanhas integradas, as séries de investimento se movem ao mesmo tempo e fica difícil separar o efeito de cada uma.
+
+Nenhuma dessas características tem um valor universal. O carryover e a saturação mudam conforme o canal, o mercado, a região e a categoria de produto, e a multicolinearidade depende de como cada empresa planeja a veiculação. Por isso, os parâmetros precisam ser estimados a partir do histórico de cada negócio, e a qualidade dessa estimação define o quanto o modelo é confiável para orientar decisões de orçamento.
 
 # 2. Objetivo e Perguntas de Pesquisa
 
@@ -92,9 +100,8 @@ A estimação usa regressão **Ridge com restrição de não negatividade** nos 
 1. **Sazonalidade anual forte.** A ACF mostra picos nos lags 52 e 104, e novembro e dezembro concentram uma parcela das vendas bem acima das demais semanas. Os controles de calendário são necessários para que esses picos não sejam atribuídos à mídia.
 2. **A verba acompanha a demanda.** A maioria dos canais concentra investimento no fim de ano, junto com as vendas, o que reforça a multicolinearidade e abre a hipótese de causalidade reversa.
 3. **TV, display e Google Ads têm o formato mais próximo do das vendas.** Pela distância DTW (janela de 8 semanas), esses três canais formam o grupo mais parecido com a série de vendas, enquanto vídeo, mala direta, áudio streaming, e-mail, jornal e SMS ficam mais distantes.
-4. **Lags negativos sugerem verba reativa.** Alguns canais, como o rádio, se movem depois das vendas no alinhamento da DTW, o que indica reforço de mídia em períodos de demanda já aquecida.
-5. **Google Ads provavelmente registra cliques.** O custo por unidade é compatível com custo por clique, e não por mil impressões, o que exige cuidado para não superestimar o efeito de um canal de fundo de funil.
-6. **O mix muda ao longo do tempo.** O jornal perde investimento a partir de 2016 e quase desaparece em 2018, enquanto mídia social e display crescem. A mídia social também tem investimento sem impressões no primeiro ano da série.
+4. **Google Ads provavelmente registra cliques.** O custo por unidade é compatível com custo por clique, e não por mil impressões, o que exige cuidado para não superestimar o efeito de um canal de fundo de funil.
+5. **O mix muda ao longo do tempo.** O jornal perde investimento a partir de 2016 e quase desaparece em 2018, enquanto mídia social e display crescem. A mídia social também tem investimento sem impressões no primeiro ano da série.
 
 ![Série de vendas e decomposição sazonal](imagens/decomposicao_vendas.png)
 
@@ -102,19 +109,30 @@ A estimação usa regressão **Ridge com restrição de não negatividade** nos 
 
 ## 5.3 Preparação dos dados e busca de hiperparâmetros
 
-Cada canal passa pela sequência abaixo antes de entrar na regressão.
+Antes de entrar na regressão, cada canal passa por duas transformações que representam a resposta à mídia.
 
 ```
 Impressões → Adstock (α) → Saturação de Hill (K, S) → Variável explicativa na Ridge (λ)
 ```
 
-Como α, K, S e λ não são observados, cada conjunto candidato gera uma matriz de variáveis, a Ridge é ajustada e o erro na validação indica a qualidade do conjunto. Três caminhos de busca serão comparados no período de teste, com as faixas de parâmetros recomendadas pelo Robyn para cada grupo de mídia.
+Os parâmetros dessas transformações, a memória do adstock (α), o ponto de meia saturação (K) e a inclinação da curva (S), além da penalização da Ridge (λ), não são observados nos dados e não têm um valor universal. Eles mudam de mercado para mercado, de empresa para empresa e de canal para canal, conforme a categoria de produto, a região e a forma como a empresa planeja a veiculação. Como não existe um valor correto conhecido de antemão, os parâmetros precisam ser estimados a partir do histórico do próprio negócio.
+
+A estimação é feita por combinação. Cada conjunto candidato de parâmetros gera uma matriz de variáveis transformadas, a Ridge é ajustada sobre ela e o resultado é avaliado no período de validação. Combinações diferentes podem produzir modelos com erro alto ou baixo, e também decomposições mais ou menos plausíveis, então a busca precisa olhar para os dois aspectos.
+
+Para definir os candidatos, o trabalho se apoia nas faixas recomendadas pelo Robyn, da Meta, para cada grupo de mídia, e compara três caminhos.
 
 | Caminho | Estratégia | Característica |
 |---|---|---|
-| 1 | Grade com S = 1 | Mais simples, sem saturação em formato de S |
-| 2 | Grade completa, com S livre | Mais flexível, com muito mais combinações |
-| 3 | Nevergrad (TwoPointsDE) | Minimiza ao mesmo tempo o NRMSE e o DECOMP.RSSD, como no Robyn |
+| 1 | Grid search com S = 1 | Combina valores prefixados de α, K e λ. É o caminho mais simples, mas não permite saturação em formato de S |
+| 2 | Grid search com S livre | Inclui a inclinação na grade, ao custo de um número muito maior de combinações |
+| 3 | Nevergrad (TwoPointsDE) | Algoritmo evolutivo usado pelo Robyn, que gera novos candidatos a partir dos melhores em vez de testar todas as combinações |
+
+Os dois primeiros caminhos escolhem a combinação pelo menor erro de previsão. O Nevergrad, seguindo o Robyn, otimiza duas métricas ao mesmo tempo.
+
+- **NRMSE** (raiz do erro quadrático médio normalizada), que mede o quanto as vendas previstas se aproximam das vendas reais.
+- **DECOMP.RSSD**, que mede a distância entre a parcela do efeito atribuída a cada canal e a parcela do investimento que ele recebeu. A métrica evita soluções que ajustam bem a curva de vendas, mas concentram todo o crédito em poucos canais e zeram os demais, o que seria difícil de defender diante da área de negócios.
+
+Os três caminhos são comparados no período de teste, e a escolha final considera o ajuste e a plausibilidade da decomposição.
 
 ## 5.4 Modelagem
 
