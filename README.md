@@ -10,7 +10,7 @@ Saber quanto cada canal de mídia contribui para as vendas sempre foi uma pergun
 
 Mesmo quando o rastreamento funciona, os modelos de atribuição mais usados, como o de último clique, representam mal o comportamento do consumidor. Uma pessoa pode ver um anúncio no display, encontrar a marca no jornal dias depois e só então buscar o produto no Google e comprar. Na atribuição por último clique, a busca paga leva todo o crédito pela venda, e os canais que despertaram o interesse ficam invisíveis, sobretudo os offline, que nunca geram um clique.
 
-Sem uma rastreabilidade confiável, as empresas perdem a base para dizer qual canal gera retorno e como distribuir o orçamento. É nesse contexto que o Marketing Mix Modeling volta a ganhar espaço. Por ser uma regressão sobre séries temporais agregadas (vendas e investimento por semana, por exemplo), o MMM estima a contribuição de cada canal sem depender de dados individuais de usuário nem dos relatórios das próprias plataformas, e ainda coloca a mídia online e a offline na mesma base de comparação.
+Sem uma rastreabilidade confiável, as empresas perdem a base para dizer qual canal gera retorno e como distribuir o orçamento. É nesse contexto que o Marketing Mix Modeling volta a ganhar espaço. Por ser uma regressão sobre séries temporais agregadas (vendas, volume de impressões e investimento por semana, por exemplo), o MMM estima a contribuição de cada canal sem depender de dados individuais de usuário nem dos relatórios das próprias plataformas, e ainda coloca a mídia online e a offline na mesma base de comparação.
 
 ## Os desafios de estimação
 
@@ -60,7 +60,7 @@ Nenhuma dessas características tem um valor universal. O carryover e a saturaç
 | Mala direta, folheto e jornal | Offline | Sim |
 | Rádio e TV | Offline | Sim |
 | Áudio streaming, vídeo, mídia social, display e Google Ads | Digital | Sim |
-| E-mail, SMS e afiliados | Própria (owned) | Não, entram como controle e sem ROI |
+| E-mail, SMS e afiliados | Própria (owned) | Não, entram como influenciadores mas sem ROAS |
 
 **Demais variáveis.**
 
@@ -93,7 +93,7 @@ $$
 \text{Hill}(A_t) = \frac{A_t^{S}}{K^{S} + A_t^{S}}
 $$
 
-A estimação usa regressão **Ridge com restrição de não negatividade** nos coeficientes, escolhida pela multicolinearidade entre os canais e alinhada à prática de mercado dos MMMs frequentistas.
+A estimação usa regressão **Ridge** nos coeficientes, escolhida pela multicolinearidade entre os canais e alinhada à prática de mercado dos MMMs frequentistas.
 
 ## 5.2 Principais achados da análise exploratória
 
@@ -117,13 +117,13 @@ Impressões → Adstock (α) → Saturação de Hill (K, S) → Variável explic
 
 Os parâmetros dessas transformações, a memória do adstock (α), o ponto de meia saturação (K) e a inclinação da curva (S), além da penalização da Ridge (λ), não são observados nos dados e não têm um valor universal. Eles mudam de mercado para mercado, de empresa para empresa e de canal para canal, conforme a categoria de produto, a região e a forma como a empresa planeja a veiculação. Como não existe um valor correto conhecido de antemão, os parâmetros precisam ser estimados a partir do histórico do próprio negócio.
 
-A estimação é feita por combinação. Cada conjunto candidato de parâmetros gera uma matriz de variáveis transformadas, a Ridge é ajustada sobre ela e o resultado é avaliado no período de validação. Combinações diferentes podem produzir modelos com erro alto ou baixo, e também decomposições mais ou menos plausíveis, então a busca precisa olhar para os dois aspectos.
+A estimação é feita por combinação de valores pre-estabelecidos. Cada conjunto candidato de parâmetros gera uma matriz de variáveis transformadas, a Ridge é ajustada sobre ela e o resultado é avaliado no período de validação. Combinações diferentes podem produzir modelos com erro alto ou baixo, e também decomposições mais ou menos plausíveis, então a busca precisa olhar para os dois aspectos.
 
 Para definir os candidatos, o trabalho se apoia nas faixas recomendadas pelo Robyn, da Meta, para cada grupo de mídia, e compara três caminhos.
 
 | Caminho | Estratégia | Característica |
 |---|---|---|
-| 1 | Grid search com S = 1 | Combina valores prefixados de α, K e λ. É o caminho mais simples, mas não permite saturação em formato de S |
+| 1 | Grid search com S = 1 | Combina valores prefixados de α, K e λ. É o caminho mais simples e servirá como base para os próximos resultados |
 | 2 | Grid search com S livre | Inclui a inclinação na grade, ao custo de um número muito maior de combinações |
 | 3 | Nevergrad (TwoPointsDE) | Algoritmo evolutivo usado pelo Robyn, que gera novos candidatos a partir dos melhores em vez de testar todas as combinações |
 
@@ -132,6 +132,8 @@ Os dois primeiros caminhos escolhem a combinação pelo menor erro de previsão.
 - **NRMSE** (raiz do erro quadrático médio normalizada), que mede o quanto as vendas previstas se aproximam das vendas reais.
 - **DECOMP.RSSD**, que mede a distância entre a parcela do efeito atribuída a cada canal e a parcela do investimento que ele recebeu. A métrica evita soluções que ajustam bem a curva de vendas, mas concentram todo o crédito em poucos canais e zeram os demais, o que seria difícil de defender diante da área de negócios.
 
+Essa abordagem bi-objetivo mapeia uma Fronteira de Pareto, identificando um conjunto de soluções ótimas onde nenhuma melhora de previsão (NRMSE) ocorre sem piorar a coerência de alocação de negócio (DECOMP.RSSD).
+
 Os três caminhos são comparados no período de teste, e a escolha final considera o ajuste e a plausibilidade da decomposição.
 
 ## 5.4 Modelagem
@@ -139,7 +141,7 @@ Os três caminhos são comparados no período de teste, e a escolha final consid
 - **Tendência.** Extraída com o Prophet e incluída como controle.
 - **Validação temporal.** As últimas 52 semanas ficam reservadas para teste, e o treino usa as 157 anteriores.
 - **Padronização.** Ajustada apenas no treino e aplicada ao teste.
-- **Regularização.** O λ da Ridge é escolhido por busca em grade, com coeficientes restritos a valores não negativos.
+- **Regularização.** O λ da Ridge é escolhido por busca em grade.
 
 ## 5.5 Avaliação
 
@@ -175,7 +177,8 @@ A decomposição por canal, o ROAS e as curvas de mROAS dessa versão estão em 
 # 7. Escopo e Limitações
 
 - O trabalho se concentra na abordagem **frequentista**. O MMM bayesiano fica como trabalho futuro, embora compartilhe a mesma estrutura de adstock, saturação e decomposição.
-- O modelo estima efeitos a partir de dados observacionais e **sob as premissas da especificação**. A validação causal dos resultados exige experimentos, como estudos de geolift.
+- Diferentes combinações de parâmetros de adstock e saturação podem gerar ajustes históricos quase idênticos (mesmo $R^2$), exigindo verificação real posterior.
+- O modelo estima efeitos a partir de dados observacionais e **sob as premissas da especificação**. A validação causal dos resultados exigiria outros experimentos.
 - As simulações de orçamento valem dentro da faixa de investimento observada no histórico e sob a hipótese de continuidade das condições de mercado. Elas estimam a venda associada a um mix de mídia e não preveem a venda de uma semana específica.
 
 # 8. Como Reproduzir
